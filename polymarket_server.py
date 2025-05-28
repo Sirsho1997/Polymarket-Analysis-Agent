@@ -89,7 +89,7 @@ def classify_descriptions_with_claude(questions: List[str], batch_size: int = 10
     return all_categories
 
 @mcp.tool()
-def download_recent_events(n: int = 2) -> DataFrame:
+def download_recent_events(n: int = 2) -> str:
     """
     Downloads recent active events from Polymarket.
 
@@ -97,7 +97,7 @@ def download_recent_events(n: int = 2) -> DataFrame:
         n (int): # of events to return Default is 2 (reduce claude API call).
 
     Returns:
-        DataFrame: A DataFrame containing event.
+        str: A summary of DataFrame containing events details.
     """
 
     # API endpoint to fetch all currently open events
@@ -190,10 +190,22 @@ def download_recent_events(n: int = 2) -> DataFrame:
     # Ensure directory exists before saving
     os.makedirs(EVENT_DIR, exist_ok=True)
 
+    print(event_df)
     # Save DataFrame to CSV file
     event_df.to_csv(f"{EVENT_DIR}/events_{current_time_ms}.csv", index=False)
 
-    return event_df
+    content =''
+
+    for _, row in event_df.iterrows():
+        content += f"## {row['question']}\n"
+        content += f"- **Event ID**: {row['event_id']}\n"
+        content += f"- **Category**: {row.get('categories', 'Unknown')}\n"
+        content += f"- **Volume**: ${row['volume']:.2f}\n"
+        content += f"- **Yes Price**: {row['outcomePrice_yes']:.2f}\n"
+        content += f"- **End Date**: {row['endDateIso']}\n\n"
+        content += "---\n\n"
+
+    return content
 
 
 @mcp.resource("events://latest")
@@ -215,6 +227,7 @@ def extract_events() -> str:
         dfs = [pd.read_csv(f) for f in csv_files]
         df = pd.concat(dfs, ignore_index=True)
 
+        print(df)
         content = "# Latest Polymarket Events\n\n"
         content += f"Total events: {len(df)}\n\n"
 

@@ -20,7 +20,7 @@ model = ChatOpenAI(model="gpt-4o", openai_api_key=openai_api_key)
 # MCP server parameters
 server_params = StdioServerParameters(
     command="python",
-    args=["mcp_server_v3.py"],
+    args=["polymarket_server.py"],
 )
 
 async def main():
@@ -50,7 +50,6 @@ async def main():
                 elif user_input.lower() == "events":
                     for r in resources:
                         print(r.data)
-
 
                     continue
 
