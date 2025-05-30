@@ -10,7 +10,7 @@ This project combines the **Model Context Protocol (MCP)** with **LLM models** a
   Automatically categorizes events into topics like *Politics*, *Tech*, *Crypto*, etc.
 
 - **View Price History**  
-  Uses CLOB API to fetch historical pricing data for each market.
+  Uses CLOB API to fetch historical pricing data for each market, and also appends relevant internet search context for the event question using the [Tavily API](https://www.tavily.com/).
 
 - **Persistent Resource Storage**  
   Each tool run saves data as versioned `.csv` files (e.g., `events_1687628300000.csv`). Where 1687628300000 is the current timestamp in ms.
@@ -51,6 +51,7 @@ pip install -r requirements.txt
 ### 3. Set Environment Variables
 
 ```bash
+TAVILY_API_KEY=your_tavily_key
 ANTHROPIC_API_KEY=your_anthropic_key
 OPENAI_API_KEY=your_openai_key
 ```
@@ -62,7 +63,7 @@ python polymarket_client.py
 
 ##  Key MCP Tools & Resources
 - download_recent_events(n: int)	: Downloads & categorized active Polymarket events based on category.
-- get_price_history_clob(event_id: str): Fetches historical price data for an event.
+- get_price_history_clob(event_id: str): Fetches historical price data for an event and also appends search context for the event question AI agents using the **Tavily** API.
 - extract_events(): Returns a markdown summary of all saved events.
 
 ## Example Conversation
@@ -75,5 +76,7 @@ python polymarket_client.py
 [Polymarket ](https://polymarket.com/) — for open prediction market data
 
 [FastMCP](https://gofastmcp.com/getting-started/welcome?gad_source=1&gad_campaignid=22521620347&gbraid=0AAAAACeCpg-oisgSP5zF9Q49q4n0LlCHJ&gclid=CjwKCAjw6NrBBhB6EiwAvnT_rkyzVxseBsYTLbJvZzQ2WOV7-2i9h23VAHBfNKYOY2g1lLZ272uZGRoCY50QAvD_BwE) — Pythonic way to build Model Context Protocol servers and clients
+
+[Tavily API](https://www.tavily.com/) — a specialized search engine designed for Large Language Models (LLMs) and AI agents
 
 [LangGraph](https://www.langchain.com/langgraph) — multi-step agent framework
