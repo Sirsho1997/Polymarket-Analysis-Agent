@@ -10,6 +10,7 @@ import datetime
 from mcp.server.fastmcp import FastMCP
 from typing import List
 from glob import glob
+from tavily import TavilyClient
 
 load_dotenv()
 client = anthropic.Anthropic()
@@ -245,74 +246,113 @@ def extract_events() -> str:
     except Exception as e:
         return f"# Error loading events:\n\n{str(e)}"
 
-@mcp.tool()
-def get_price_history_clob(event_id : str) -> DataFrame:
+def generate_search_context(question):
     """
-    Fetches the historical price data an event using event ID.
+    Uses Tavily's API to generate web search context for a given event question.
 
     Args:
-        event_id (str): ID of the event.
+        question (str): The event or market question to search for.
 
     Returns:
-        DataFrame: A DataFrame containing the price history.
+        dict: A dictionary containing the search results.
     """
 
-    # Find all files like events_*.csv
+    tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    context = tavily_client.search(question)
+    return context
+
+@mcp.tool()
+def get_price_history_clob(event_id: str) -> str:
+    """
+    Fetches historical price data for a given Polymarket event using its event ID.
+    Also appends relevant internet search context for the event question.
+
+    Args:
+        event_id (str): The unique identifier of the event.
+
+    Returns:
+        str: A markdown-formatted string that includes the price history and
+             relevant Tavily search results for additional context.
+    """
+    final_response = ''
+
+    # Locate all previously saved event CSVs
     csv_files = glob(os.path.join(EVENT_DIR, "events_*.csv"))
+    if not csv_files:
+        return "No saved event data found."
 
-    event_df = [pd.read_csv(f) for f in csv_files]
-    event_df = pd.concat(event_df, ignore_index=True)
+    # Load all saved event data into a single DataFrame
+    event_df = pd.concat([pd.read_csv(f) for f in csv_files], ignore_index=True)
 
-    # Filter for the event with the given ID
-    event_df = event_df[event_df['event_id'] == int(event_id)]
+    # Filter for the specific event using the provided event_id
+    try:
+        event_id_int = int(event_id)
+        event_df = event_df[event_df['event_id'] == event_id_int]
+    except ValueError:
+        return "Invalid event_id. Please provide a numeric ID."
 
-    # Extract the token ID used to query the CLOB price history
+    if event_df.empty:
+        return f"No event found with ID {event_id}."
+
+    # Extract the token ID used to retrieve price history, and the event question
     token_id = event_df['token_id'].values[0]
+    event_question = event_df['question'].values[0]
 
-    # Define the API endpoint and query parameters
+    # Fetch related web context from Tavily based on the event's question
+    tavily_context = generate_search_context(event_question)
+    tavily_context_content_str = ''
+
+    if tavily_context.get('results'):
+        tavily_context_content = [entry.get('content', '') for entry in tavily_context['results']]
+        tavily_context_content_str = '\n'.join(tavily_context_content)
+
+    # Define the API endpoint and parameters for historical price data
     url = 'https://clob.polymarket.com/prices-history'
     params = {
         'market': token_id,
-        'fidelity': 60,     # Fidelity level of price data (60 min = default granularity)
-        'interval': 'all'   # Get the entire history
+        'fidelity': 60,      # Granularity of price data in minutes
+        'interval': 'all'    # Retrieve the entire available history
     }
 
-    # Send GET request to the Polymarket CLOB price history API
+    # Query the Polymarket CLOB price history API
     r = requests.get(url, params=params)
+    if r.status_code != 200:
+        print(f"Failed to fetch price history data: HTTP {r.status_code}")
+        return final_response
 
-    if r.status_code == 200:
-        # Parse the response JSON
-        response = json.loads(r.text)
+    # Parse response JSON and convert to DataFrame
+    response = json.loads(r.text)
+    price_history_df = pd.DataFrame(response.get('history', []))
 
-        # Convert the 'history' field into a DataFrame
-        price_history_df = pd.DataFrame(response['history'])
+    if price_history_df.empty:
+        return "No price history data available for this event."
 
-        if price_history_df.empty:
-            print("No price history data available.")
-            return price_history_df
+    # Convert UNIX timestamps to datetime
+    price_history_df['t'] = pd.to_datetime(price_history_df['t'], unit='s', utc=True)
 
-        # Convert UNIX timestamp to datetime
-        price_history_df['t'] = pd.to_datetime(price_history_df['t'], unit='s', utc=True)
+    # Rename columns for clarity
+    price_history_df.rename(columns={'t': 'timestamp', 'p': 'price'}, inplace=True)
 
-        # Rename columns for clarity
-        price_history_df.rename(columns={'t': 'timestamp', 'p': 'price'}, inplace=True)
+    # Drop the last row, which might contain partial or unrefreshed data
+    price_history_df = price_history_df.iloc[:-1]
 
-        # Drop the last row, which may contain unrefreshed or partial data
-        price_history_df = price_history_df.iloc[:-1]
+    # Set timestamp as index for better time-series handling (optional)
+    price_history_df.set_index('timestamp', inplace=True)
+    price_history_df.reset_index(inplace=True)
 
-        # Set timestamp as index for time-series operations
-        price_history_df.set_index('timestamp', inplace=True)
+    # Build the final markdown-formatted response
+    final_response = (
+        f"## Event: {event_question}\n\n"
+        f"### Price History\n\n"
+        f"{price_history_df.to_markdown()}\n\n"
+        f"### Related Web Context\n\n"
+        f"{tavily_context_content_str}"
+    )
 
-        # Reset index if you want 'timestamp' as a column again
-        price_history_df.reset_index(inplace=True)
+    return final_response
 
-        return price_history_df
-
-    else:
-        # Handle failed request
-        print(f"Failed to fetch data: {r.status_code}")
-        return pd.DataFrame()
 
 # Starting the server
 if __name__ == "__main__":
     mcp.run(transport="stdio")
+

@@ -4,6 +4,7 @@ langchain-mcp-adapters==0.0.11
 langchain-openai
 langgraph
 fastmcp
+tavily-python
 
 anthropic>=0.51.0
 mcp>=1.7.1
